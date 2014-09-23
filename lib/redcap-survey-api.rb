@@ -1,48 +1,59 @@
-require "json"
-require "mechanize"
+require 'json'
+require 'mechanize'
+require 'redcap-survey-api/hash_extension'
+require 'redcap-survey-api/empty_parser'
 
-class RedcapSurveyApi
-  DEFAULT_PARAMS = {
-    :content => 'record',
-    :format  => 'json',
-    :type    => 'flat'
-  }
+module RedcapSurveyApi
+  class RedcapApi
+    DEFAULT_PARAMS = {
+      :content => 'record',
+      :format  => 'json',
+      :type    => 'flat',
+      :parser  => JSON
+    }
 
-  def initialize(params = {})
-    @url             = params[:url]
-    @payload         = DEFAULT_PARAMS
-    @payload[:token] = params[:token]
-    @parser          = params[:parser] || JSON
+    def initialize(params = {})
+      @payload = DEFAULT_PARAMS.merge(params)
+    end
 
-    if (false == @parser.is_a?(JSON))
-      if ('json' == @payload[:format])
-        puts "!WARNING: Your parser '#{@parser}' and your default format '#{@payload[:format]}' don't seem to match."
+    def export(params = {})
+      return api(params)
+    end
+
+    def export_metadata(params = {})
+      payload = {:content => 'metadata'}.merge(params)
+      return export(payload)
+    end
+
+    def export_metadata_fields
+      response = export_metadata()
+      if response
+        response.collect {|r| r['field_name'] if r }
       end
     end
-  end
 
-  def export_metadata_fields
-    response = export_metadata()
-    if response
-      response.collect {|r| r['field_name'] if r }
+    def import(params = {})
+      return api(params)
     end
-  end
 
-  def export(params = {})
-    return @parser.parse(api(params))
-  end
+    private
+    def api(params = {})
+      payload = @payload.merge(params)
+      validate(payload)
 
-  def export_metadata(params = {})
-    payload = {:content => 'metadata'}.merge(params)
-    return self.export(payload)
-  end
+      return payload[:parser].parse(Mechanize.new.post(@url, payload).body)
+    end
 
-  def import(params = {})
-    return api(params)
-  end
+    def validate(params)
+      [:token, :url].each do |required_param|
+        if (false == params.include?(required_param))
+          raise "!ERROR: '#{required_param}' is a required parameter."
+        end
+      end
 
-  def api(params = {})
-    payload = @payload.merge(params)
-    return Mechanize.new.post(@url, payload).body
+      if ((false == "#{params[:parser]}".include?("EmptyParser")) && (false == "#{params[:parser]}".downcase.include?(params[:format])))
+        $stderr.puts "!WARNING: Your parser '#{params[:parser]}' and your default format '#{params[:format]}' don't seem to match."
+      end
+    end
   end
 end
